@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Valtronic MES — SMT Stock & Traceability System</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#05070d;
+    --bg-1:#0b0f1a;
+    --bg-2:#111726;
+    --panel:#0e1420;
+    --panel-border:#1e2636;
+    --indigo:#6366f1;
+    --emerald:#10b981;
+    --amber:#f59e0b;
+    --rose:#f43f5e;
+    --blue:#3b82f6;
+    --text-hi:#e7ecf7;
+    --text-mid:#8f9bb3;
+    --text-low:#5b6579;
+  }
+  *{font-family:'Inter',sans-serif;}
+  body{background:var(--bg-0); color:var(--text-hi);}
+  .font-mono{font-family:'JetBrains Mono',monospace;}
+
+  /* PCB trace signature pattern */
+  .pcb-bg{
+    background-image:
+      radial-gradient(circle at 18px 18px, rgba(99,102,241,0.35) 1.5px, transparent 1.5px),
+      linear-gradient(rgba(99,102,241,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99,102,241,0.08) 1px, transparent 1px);
+    background-size: 36px 36px, 36px 36px, 36px 36px;
+    background-position: 0 0, 0 0, 0 0;
+  }
+  .trace-line{
+    stroke:#232c40; stroke-width:1.5; fill:none;
+  }
+  .trace-node{ fill:#1e2636; stroke:#334059; stroke-width:1; }
+
+  .panel{ background:var(--panel); border:1px solid var(--panel-border); }
+  .glow-indigo{ box-shadow: 0 0 0 1px rgba(99,102,241,0.15), 0 8px 30px -12px rgba(99,102,241,0.25); }
+
+  .kpi-card{ transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease; }
+  .kpi-card:hover{ transform: translateY(-3px); border-color: rgba(99,102,241,0.4); box-shadow: 0 12px 30px -10px rgba(0,0,0,0.6); }
+
+  .status-dot{ width:7px; height:7px; border-radius:999px; display:inline-block; }
+  .pulse{ animation: pulse-ring 1.8s cubic-bezier(0.4,0,0.6,1) infinite; }
+  @keyframes pulse-ring{
+    0%{ box-shadow: 0 0 0 0 rgba(244,63,94,0.55);}
+    70%{ box-shadow: 0 0 0 7px rgba(244,63,94,0);}
+    100%{ box-shadow: 0 0 0 0 rgba(244,63,94,0);}
+  }
+
+  ::-webkit-scrollbar{ height:8px; width:8px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:#232c40; border-radius:999px; }
+  ::-webkit-scrollbar-thumb:hover{ background:#2d374e; }
+
+  tbody tr{ transition: background-color .15s ease; }
+  tbody tr:hover{ background-color: rgba(99,102,241,0.06); }
+
+  .badge{ font-size:11px; font-weight:600; letter-spacing:.02em; padding:3px 9px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; }
+
+  #modal-backdrop{ backdrop-filter: blur(6px); }
+  .modal-panel{ animation: modal-in .25s ease; }
+  @keyframes modal-in{ from{ opacity:0; transform: translateY(12px) scale(.98);} to{ opacity:1; transform:translateY(0) scale(1);} }
+
+  input:focus, select:focus{ outline:none; box-shadow: 0 0 0 2px rgba(99,102,241,0.5); }
+
+  .fade-row{ animation: row-in .4s ease; }
+  @keyframes row-in{ from{ opacity:0; background-color: rgba(16,185,129,0.15);} to{ opacity:1; } }
+
+  .alert-slide{ animation: alert-in .5s ease; }
+  @keyframes alert-in{ from{ opacity:0; transform: translateY(-8px);} to{ opacity:1; transform:translateY(0);} }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============ HEADER ============ -->
+<header class="sticky top-0 z-40 border-b border-slate-800 bg-[#05070d]/90 backdrop-blur-md">
+  <div class="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between gap-6">
+    <div class="flex items-center gap-3">
+      <!-- Brand mark: chip glyph, built inline since no logo.png asset was supplied -->
+      <svg width="38" height="38" viewBox="0 0 38 38" class="shrink-0" aria-label="Valtronic Logo">
+        <rect x="9" y="9" width="20" height="20" rx="3" fill="none" stroke="#6366f1" stroke-width="2"/>
+        <rect x="14" y="14" width="10" height="10" rx="1.5" fill="#6366f1"/>
+        <g stroke="#6366f1" stroke-width="2" stroke-linecap="round">
+          <line x1="19" y1="2" x2="19" y2="9"/><line x1="19" y1="29" x2="19" y2="36"/>
+          <line x1="2" y1="19" x2="9" y2="19"/><line x1="29" y1="19" x2="36" y2="19"/>
+          <line x1="9" y1="9" x2="4" y2="4"/><line x1="29" y1="9" x2="34" y2="4"/>
+          <line x1="9" y1="29" x2="4" y2="34"/><line x1="29" y1="29" x2="34" y2="34"/>
+        </g>
+      </svg>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-[15px] font-bold tracking-tight text-white leading-none">Valtronic Technologies Maroc</h1>
+          <span class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400">ISO 13485</span>
+        </div>
+        <p class="text-[12px] text-slate-500 mt-1">Usine Berrechid — Zone Industrielle · Assemblage SMT/CMS & Dispositifs Médicaux</p>
+      </div>
+    </div>
+
+    <div class="hidden md:flex items-center gap-5">
+      <div class="flex items-center gap-2 text-[12px] text-slate-400">
+        <span class="status-dot bg-emerald-500 pulse"></span>
+        4 Lignes SMT Actives <span class="text-slate-600">(Live)</span>
+      </div>
+      <div class="w-px h-4 bg-slate-800"></div>
+      <div class="flex items-center gap-2 text-[12px] text-slate-400">
+        <i class="fa-solid fa-database text-indigo-400 text-[11px]"></i>
+        Base de données : <span class="text-emerald-400 font-medium">Synchronisée</span> (Temps Réel)
+      </div>
+      <div class="w-px h-4 bg-slate-800"></div>
+      <span class="font-mono text-[11px] px-2 py-1 rounded border border-amber-800/50 bg-amber-500/10 text-amber-400">
+        <i class="fa-solid fa-shield-halved mr-1"></i>ESD SAFE
+      </span>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <div class="text-right hidden sm:block">
+        <p class="text-[13px] font-semibold text-white leading-none">Youness E.</p>
+        <p class="text-[11px] text-slate-500 mt-1">Resp. Gestion de Stock & Supply Chain</p>
+      </div>
+      <div class="w-9 h-9 rounded-full bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-300 font-semibold text-sm">YE</div>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+
+  <!-- ============ ALERT BANNER ============ -->
+  <div id="alert-banner" class="alert-slide flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-rose-800/50 bg-gradient-to-r from-rose-950/60 to-rose-900/20 px-5 py-3.5">
+    <div class="flex items-start gap-3">
+      <div class="mt-0.5 w-8 h-8 rounded-lg bg-rose-500/15 flex items-center justify-center shrink-0">
+        <i class="fa-solid fa-triangle-exclamation text-rose-400 text-sm"></i>
+      </div>
+      <div>
+        <p class="text-[13.5px] font-semibold text-rose-200">
+          Stock critique — <span class="font-mono">CAP-10UF-0805</span> a atteint le seuil minimal
+        </p>
+        <p class="text-[12.5px] text-rose-300/70 mt-0.5">85 pcs restants sur un seuil de sécurité de 500 pcs (17% de couverture). Réapprovisionnement requis pour la Ligne SMT 1.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0 pl-11 sm:pl-0">
+      <button onclick="autoOrder()" class="px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[12.5px] font-semibold transition-colors">
+        <i class="fa-solid fa-bolt mr-1.5"></i>Commande Automatique
+      </button>
+      <button onclick="document.getElementById('alert-banner').remove()" class="w-8 h-8 rounded-lg border border-rose-800/50 text-rose-400 hover:bg-rose-900/30 flex items-center justify-center transition-colors">
+        <i class="fa-solid fa-xmark text-xs"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ KPI CARDS ============ -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+
+    <div class="kpi-card panel rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-[12px] text-slate-500 font-medium">Total Références</p>
+          <p class="text-[26px] font-bold text-white mt-1.5 font-mono">1,240</p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-layer-group text-indigo-400"></i>
+        </div>
+      </div>
+      <p class="text-[12px] text-emerald-400 mt-3"><i class="fa-solid fa-arrow-trend-up mr-1"></i>+8.4% ce mois</p>
+    </div>
+
+    <div class="kpi-card panel rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-[12px] text-slate-500 font-medium">Composants en Stock</p>
+          <p class="text-[26px] font-bold text-white mt-1.5 font-mono">184,500 <span class="text-[13px] text-slate-500 font-normal">pcs</span></p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-microchip text-emerald-400"></i>
+        </div>
+      </div>
+      <p class="text-[12px] text-slate-500 mt-3">Taux de couverture : <span class="text-emerald-400 font-medium">94%</span></p>
+    </div>
+
+    <div class="kpi-card panel rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-[12px] text-slate-500 font-medium">Alertes Stock Critiques</p>
+          <p class="text-[26px] font-bold text-white mt-1.5 font-mono">3 <span class="text-[13px] text-slate-500 font-normal">refs</span></p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
+        </div>
+      </div>
+      <p class="text-[12px] text-rose-400 mt-3">Réapprovisionnement requis</p>
+    </div>
+
+    <div class="kpi-card panel rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-[12px] text-slate-500 font-medium">Taux de Traçabilité</p>
+          <p class="text-[26px] font-bold text-white mt-1.5 font-mono">99.8<span class="text-[15px]">%</span></p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-chart-line text-blue-400"></i>
+        </div>
+      </div>
+      <p class="text-[12px] text-slate-500 mt-3">Conforme <span class="text-blue-400 font-medium">ISO 13485</span></p>
+    </div>
+  </div>
+
+  <!-- ============ CHARTS ============ -->
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+    <div class="panel rounded-xl p-5 xl:col-span-2">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-[14px] font-semibold text-white">Consommation des Composants CMS</h3>
+          <p class="text-[11.5px] text-slate-500 mt-0.5">7 derniers jours · par ligne de production</p>
+        </div>
+        <div class="flex items-center gap-3 text-[11px]">
+          <span class="flex items-center gap-1.5 text-slate-400"><span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>SMT 1 — Médical</span>
+          <span class="flex items-center gap-1.5 text-slate-400"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>SMT 2 — Industriel</span>
+        </div>
+      </div>
+      <div class="h-[280px]"><canvas id="lineChart"></canvas></div>
+    </div>
+
+    <div class="panel rounded-xl p-5">
+      <h3 class="text-[14px] font-semibold text-white">Distribution du Stock par Famille</h3>
+      <p class="text-[11.5px] text-slate-500 mt-0.5 mb-4">Répartition actuelle</p>
+      <div class="h-[200px] flex items-center justify-center"><canvas id="doughnutChart"></canvas></div>
+      <div class="mt-4 space-y-2">
+        <div class="flex items-center justify-between text-[12px]"><span class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-indigo-500"></span>Résistances</span><span class="font-mono text-slate-300">45%</span></div>
+        <div class="flex items-center justify-between text-[12px]"><span class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Condensateurs</span><span class="font-mono text-slate-300">25%</span></div>
+        <div class="flex items-center justify-between text-[12px]"><span class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Microcontrôleurs</span><span class="font-mono text-slate-300">15%</span></div>
+        <div class="flex items-center justify-between text-[12px]"><span class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-pink-500"></span>Semiconducteurs & Diodes</span><span class="font-mono text-slate-300">15%</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ INVENTORY TABLE ============ -->
+  <div class="panel rounded-xl overflow-hidden">
+    <div class="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800">
+      <div>
+        <h3 class="text-[14px] font-semibold text-white">Inventaire des Composants</h3>
+        <p class="text-[11.5px] text-slate-500 mt-0.5">Traçabilité complète par référence, famille et emplacement</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 text-xs"></i>
+          <input id="searchInput" type="text" placeholder="Rechercher par référence ou désignation…"
+            class="w-64 sm:w-80 bg-[#0b0f1a] border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-[12.5px] text-white placeholder:text-slate-600">
+        </div>
+        <button onclick="openModal()" class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[12.5px] font-semibold flex items-center gap-2 transition-colors whitespace-nowrap">
+          <i class="fa-solid fa-plus text-[11px]"></i>Entrée Composant
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead>
+          <tr class="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
+            <th class="px-5 py-3 font-medium">QR / Référence</th>
+            <th class="px-5 py-3 font-medium">Désignation Technique</th>
+            <th class="px-5 py-3 font-medium">Famille</th>
+            <th class="px-5 py-3 font-medium">Stock Actuel</th>
+            <th class="px-5 py-3 font-medium">Seuil Sécurité</th>
+            <th class="px-5 py-3 font-medium">Emplacement</th>
+            <th class="px-5 py-3 font-medium">Statut</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody" class="divide-y divide-slate-800/70 text-[13px]"></tbody>
+      </table>
+    </div>
+    <p id="noResults" class="hidden px-5 py-8 text-center text-[13px] text-slate-500">
+      <i class="fa-solid fa-box-open mr-2"></i>Aucun composant ne correspond à votre recherche.
+    </p>
+  </div>
+
+  <footer class="text-center text-[11px] text-slate-600 pt-2 pb-6">
+    Valtronic MES · SMT Stock & Traceability System — Usine Berrechid © 2026
+  </footer>
+</main>
+
+<!-- ============ MODAL ============ -->
+<div id="modal-backdrop" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+  <div class="modal-panel panel rounded-xl w-full max-w-md p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-[15px] font-semibold text-white"><i class="fa-solid fa-plus text-indigo-400 mr-2"></i>Nouvelle Entrée Composant</h3>
+      <button onclick="closeModal()" class="w-7 h-7 rounded-lg hover:bg-slate-800 flex items-center justify-center text-slate-500"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="addForm" class="space-y-4" onsubmit="return addComponent(event)">
+      <div>
+        <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Référence Composant</label>
+        <input required id="f-ref" type="text" placeholder="ex: RES-4K7-0603"
+          class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] font-mono text-white placeholder:text-slate-600">
+      </div>
+      <div>
+        <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Désignation</label>
+        <input required id="f-desc" type="text" placeholder="ex: Résistance CMS 4.7k Ohm 1%"
+          class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] text-white placeholder:text-slate-600">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Famille</label>
+          <select id="f-fam" class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] text-white">
+            <option>Résistances</option>
+            <option>Condensateurs</option>
+            <option>Circuits Intégrés</option>
+            <option>Semiconducteurs</option>
+            <option>Diodes</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Quantité Initiale</label>
+          <input required id="f-qty" type="number" min="0" placeholder="0"
+            class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] font-mono text-white placeholder:text-slate-600">
+        </div>
+      </div>
+      <div>
+        <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Emplacement (Rack)</label>
+        <input required id="f-loc" type="text" placeholder="ex: Rack A-15"
+          class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] font-mono text-white placeholder:text-slate-600">
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="button" onclick="closeModal()" class="flex-1 py-2.5 rounded-lg border border-slate-700 text-slate-300 text-[13px] font-medium hover:bg-slate-800/50 transition-colors">Annuler</button>
+        <button type="submit" class="flex-1 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-semibold transition-colors">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+/* ============ DATA ============ */
+let inventory = [
+  { ref:"STM32F407VGT6", desc:"Microcontrôleur ARM Cortex-M4 32-Bit", fam:"Circuits Intégrés", stock:450, seuil:100, loc:"Rack A-12" },
+  { ref:"CAP-10UF-0805", desc:"Condensateur Céramique MLCC 10uF 50V", fam:"Condensateurs", stock:85, seuil:500, loc:"Rack B-04" },
+  { ref:"RES-10K-0603", desc:"Résistance CMS 10k Ohm 1% 1/10W", fam:"Résistances", stock:12500, seuil:2000, loc:"Rack A-02" },
+  { ref:"MOSFET-N-CH-60V", desc:"Transistor MOSFET N-Channel 60V 30A SO-8", fam:"Semiconducteurs", stock:1200, seuil:300, loc:"Rack C-09" },
+  { ref:"DIODE-1N4007-SMA", desc:"Diode de Redressement 1A 1000V CMS", fam:"Diodes", stock:180, seuil:250, loc:"Rack B-02", order:true },
+];
+
+function statusOf(item){
+  if(item.order) return { label:"En Commande", cls:"bg-amber-500/10 text-amber-400 border border-amber-800/40", dot:"bg-amber-400" };
+  if(item.stock < item.seuil) return { label:"Critique", cls:"bg-rose-500/10 text-rose-400 border border-rose-800/40", dot:"bg-rose-400 pulse" };
+  return { label:"Optimal", cls:"bg-emerald-500/10 text-emerald-400 border border-emerald-800/40", dot:"bg-emerald-400" };
+}
+
+function renderTable(filter=""){
+  const body = document.getElementById('tableBody');
+  const noResults = document.getElementById('noResults');
+  const q = filter.trim().toLowerCase();
+  const rows = inventory.filter(i => i.ref.toLowerCase().includes(q) || i.desc.toLowerCase().includes(q));
+
+  body.innerHTML = "";
+  noResults.classList.toggle('hidden', rows.length > 0);
+
+  rows.forEach(item => {
+    const s = statusOf(item);
+    const tr = document.createElement('tr');
+    if(item._new){ tr.classList.add('fade-row'); delete item._new; }
+    tr.innerHTML = `
+      <td class="px-5 py-3.5">
+        <div class="flex items-center gap-2.5">
+          <i class="fa-solid fa-qrcode text-slate-600 text-sm"></i>
+          <span class="font-mono text-[12.5px] text-indigo-300">${item.ref}</span>
+        </div>
+      </td>
+      <td class="px-5 py-3.5 text-slate-300">${item.desc}</td>
+      <td class="px-5 py-3.5"><span class="text-[12px] text-slate-400">${item.fam}</span></td>
+      <td class="px-5 py-3.5 font-mono text-slate-200">${item.stock.toLocaleString('fr-FR')} pcs</td>
+      <td class="px-5 py-3.5 font-mono text-slate-500">${item.seuil.toLocaleString('fr-FR')} pcs</td>
+      <td class="px-5 py-3.5 text-slate-400">${item.loc}</td>
+      <td class="px-5 py-3.5">
+        <span class="badge ${s.cls}"><span class="status-dot ${s.dot}"></span>${s.label}</span>
+      </td>`;
+    body.appendChild(tr);
+  });
+}
+
+document.getElementById('searchInput').addEventListener('input', e => renderTable(e.target.value));
+
+/* ============ MODAL ============ */
+function openModal(){
+  document.getElementById('modal-backdrop').classList.remove('hidden');
+  document.getElementById('modal-backdrop').classList.add('flex');
+}
+function closeModal(){
+  document.getElementById('modal-backdrop').classList.add('hidden');
+  document.getElementById('modal-backdrop').classList.remove('flex');
+  document.getElementById('addForm').reset();
+}
+document.getElementById('modal-backdrop').addEventListener('click', e => { if(e.target.id === 'modal-backdrop') closeModal(); });
+
+function addComponent(e){
+  e.preventDefault();
+  const ref = document.getElementById('f-ref').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+  const fam = document.getElementById('f-fam').value;
+  const qty = parseInt(document.getElementById('f-qty').value, 10) || 0;
+  const loc = document.getElementById('f-loc').value.trim();
+
+  inventory.unshift({ ref, desc, fam, stock: qty, seuil: Math.round(qty * 0.2) || 50, loc, _new:true });
+  closeModal();
+  document.getElementById('searchInput').value = "";
+  renderTable();
+  return false;
+}
+
+function autoOrder(){
+  const item = inventory.find(i => i.ref === "CAP-10UF-0805");
+  if(item){ item.order = true; renderTable(document.getElementById('searchInput').value); }
+  const banner = document.getElementById('alert-banner');
+  if(banner){
+    banner.innerHTML = `<div class="flex items-center gap-3 py-1"><i class="fa-solid fa-circle-check text-emerald-400"></i><p class="text-[13px] text-emerald-300 font-medium">Commande automatique envoyée pour CAP-10UF-0805 — statut mis à jour vers "En Commande".</p></div>`;
+    banner.classList.remove('border-rose-800/50','from-rose-950/60','to-rose-900/20');
+    banner.classList.add('border-emerald-800/50','bg-emerald-950/30');
+    setTimeout(() => banner.remove(), 3500);
+  }
+}
+
+renderTable();
+
+/* ============ CHARTS ============ */
+Chart.defaults.color = '#5b6579';
+Chart.defaults.font.family = "'Inter', sans-serif";
+
+new Chart(document.getElementById('lineChart'), {
+  type: 'line',
+  data: {
+    labels: ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'],
+    datasets: [
+      {
+        label: 'Ligne SMT 1 — Médical',
+        data: [12000,19000,15000,22000,18000,24000,21000],
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.12)',
+        pointBackgroundColor: '#6366f1',
+        pointBorderColor: '#0e1420',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        tension: 0.35,
+        fill: true,
+      },
+      {
+        label: 'Ligne SMT 2 — Industriel',
+        data: [8000,11000,9500,14000,12000,16000,13000],
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16,185,129,0.10)',
+        pointBackgroundColor: '#10b981',
+        pointBorderColor: '#0e1420',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        tension: 0.35,
+        fill: true,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display:false } },
+    scales: {
+      x: { grid: { color: '#1e2636', drawTicks:false }, ticks: { font:{size:11} } },
+      y: { grid: { color: '#1e2636', drawTicks:false }, ticks: { font:{size:11}, callback: v => (v/1000)+'k' } }
+    }
+  }
+});
+
+new Chart(document.getElementById('doughnutChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Résistances','Condensateurs','Microcontrôleurs','Semiconducteurs & Diodes'],
+    datasets: [{
+      data: [45,25,15,15],
+      backgroundColor: ['#6366f1','#10b981','#f59e0b','#ec4899'],
+      borderColor: '#0e1420',
+      borderWidth: 3,
+      hoverOffset: 6,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '72%',
+    plugins: { legend: { display:false } }
+  }
+});
+</script>
+</body>
+</html>
