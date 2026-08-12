@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Valtronic MES — SMT Stock & Traceability System</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#05070d;
+    --bg-1:#0b0f1a;
+    --bg-2:#111726;
+    --panel:#0e1420;
+    --panel-border:#1e2636;
+    --indigo:#6366f1;
+    --emerald:#10b981;
+    --amber:#f59e0b;
+    --rose:#f43f5e;
+    --blue:#3b82f6;
+    --text-hi:#e7ecf7;
+    --text-mid:#8f9bb3;
+    --text-low:#5b6579;
+  }
+  *{font-family:'Inter',sans-serif;}
+  body{background:var(--bg-0); color:var(--text-hi);}
+  .font-mono{font-family:'JetBrains Mono',monospace;}
+ 
+  /* PCB trace signature pattern */
+  .pcb-bg{
+    background-image:
+      radial-gradient(circle at 18px 18px, rgba(99,102,241,0.35) 1.5px, transparent 1.5px),
+      linear-gradient(rgba(99,102,241,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99,102,241,0.08) 1px, transparent 1px);
+    background-size: 36px 36px, 36px 36px, 36px 36px;
+    background-position: 0 0, 0 0, 0 0;
+  }
+  .trace-line{
+    stroke:#232c40; stroke-width:1.5; fill:none;
+  }
+  .trace-node{ fill:#1e2636; stroke:#334059; stroke-width:1; }
+ 
+  .panel{ background:var(--panel); border:1px solid var(--panel-border); }
+  .glow-indigo{ box-shadow: 0 0 0 1px rgba(99,102,241,0.15), 0 8px 30px -12px rgba(99,102,241,0.25); }
+ 
+  .kpi-card{ transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease; }
+  .kpi-card:hover{ transform: translateY(-3px); border-color: rgba(99,102,241,0.4); box-shadow: 0 12px 30px -10px rgba(0,0,0,0.6); }
+ 
+  .status-dot{ width:7px; height:7px; border-radius:999px; display:inline-block; }
+  .pulse{ animation: pulse-ring 1.8s cubic-bezier(0.4,0,0.6,1) infinite; }
+  @keyframes pulse-ring{
+    0%{ box-shadow: 0 0 0 0 rgba(244,63,94,0.55);}
+    70%{ box-shadow: 0 0 0 7px rgba(244,63,94,0);}
+    100%{ box-shadow: 0 0 0 0 rgba(244,63,94,0);}
+  }
+ 
+  ::-webkit-scrollbar{ height:8px; width:8px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:#232c40; border-radius:999px; }
+  ::-webkit-scrollbar-thumb:hover{ background:#2d374e; }
+ 
+  tbody tr{ transition: background-color .15s ease; }
+  tbody tr:hover{ background-color: rgba(99,102,241,0.06); }
+ 
+  .badge{ font-size:11px; font-weight:600; letter-spacing:.02em; padding:3px 9px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; }
+ 
+  #modal-backdrop{ backdrop-filter: blur(6px); }
+  .modal-panel{ animation: modal-in .25s ease; }
+  @keyframes modal-in{ from{ opacity:0; transform: translateY(12px) scale(.98);} to{ opacity:1; transform:translateY(0) scale(1);} }
+ 
+  input:focus, select:focus{ outline:none; box-shadow: 0 0 0 2px rgba(99,102,241,0.5); }
+ 
+  .fade-row{ animation: row-in .4s ease; }
+  @keyframes row-in{ from{ opacity:0; background-color: rgba(16,185,129,0.15);} to{ opacity:1; } }
+ 
+  .alert-slide{ animation: alert-in .5s ease; }
+  @keyframes alert-in{ from{ opacity:0; transform: translateY(-8px);} to{ opacity:1; transform:translateY(0);} }
+ 
+  @media (prefers-reduced-motion: reduce){
+    *{ animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body class="min-h-screen">
+ 
+<!-- ============ HEADER ============ -->
+<header class="sticky top-0 z-40 border-b border-slate-800 bg-[#05070d]/90 backdrop-blur-md">
+  <div class="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between gap-6">
+    <div class="flex items-center gap-3">
+      <img src="data:image/png;base64,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" alt="Valtronic Logo" class="h-10 w-auto shrink-0">
+      <div class="hidden sm:block">
+        <div class="flex items-center gap-2">
+          <span class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400">ISO 13485</span>
+          <span class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-emerald-800/60 text-emerald-500">ESD SAFE</span>
+        </div>
+        <p class="text-[12px] text-slate-500 mt-1.5">Usine Berrechid — Zone Industrielle · Assemblage SMT/CMS & Dispositifs Médicaux</p>
+      </div>
+    </div>
+ 
+    <div class="hidden md:flex items-center gap-5">
+      <div class="flex items-center gap-2 text-[12px] text-slate-400">
+        <span class="status-dot bg-emerald-500 pulse"></span>
+        4 Lignes SMT Actives <span class="text-slate-600">(Live)</span>
+      </div>
+      <div class="w-px h-4 bg-slate-800"></div>
+      <div class="flex items-center gap-2 text-[12px] text-slate-400">
+        <i class="fa-solid fa-database text-indigo-400 text-[11px]"></i>
+        Base de données : <span class="text-emerald-400 font-medium">Synchronisée</span> (Temps Réel)
+      </div>
+      <div class="w-px h-4 bg-slate-800"></div>
+      <span class="font-mono text-[11px] px-2 py-1 rounded border border-amber-800/50 bg-amber-500/10 text-amber-400">
+        <i class="fa-solid fa-shield-halved mr-1"></i>ESD SAFE
+      </span>
+    </div>
+     <div class="flex items-center gap-3">
+     <div class="text-right hidden sm:block">
+     <div class="text-sm font-bold text-[#e7ecf7]">Youness El Moutaouakkil</div>
+     <div class="text-[11px] text-[#8f9bb3]">Génie Informatique — Stage EST</div>
+      </div>
+  <div class="w-9 h-9 rounded-full bg-[#6366f1] flex items-center justify-center font-bold text-white text-xs border border-[#818cf8]">
+    YE
+  </div>
+</div>
+   
+</header>
+ 
+<main class="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+ 
+  <!-- ============ ALERT BANNER ============ -->
+  <div id="alert-banner" class="alert-slide flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-rose-800/50 bg-gradient-to-r from-rose-950/60 to-rose-900/20 px-5 py-3.5">
+    <div class="flex items-start gap-3">
+      <div class="mt-0.5 w-8 h-8 rounded-lg bg-rose-500/15 flex items-center justify-center shrink-0">
+        <i class="fa-solid fa-triangle-exclamation text-rose-400 text-sm"></i>
+      </div>
+      <div>
+        <p class="text-[13.5px] font-semibold text-rose-200">
+          Stock critique — <span class="font-mono">CAP-10UF-0805</span> a atteint le seuil minimal
+        </p>
+        <p class="text-[12.5px] text-rose-300/70 mt-0.5">85 pcs restants sur un seuil de sécurité de 500 pcs (17% de couverture). Réapprovisionnement requis pour la Ligne SMT 1.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0 pl-11 sm:pl-0">
+      <button onclick="autoOrder()" class="px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[12.5px] font-semibold transition-colors">
+        <i class="fa-solid fa-bolt mr-1.5"></i>Commande Automatique
+      </button>
+      <button onclick="document.getElementById('alert-banner').remove()" class="w-8 h-8 rounded-lg border border-rose-800/50 text-rose-400 hover:bg-rose-900/30 flex items-center justify-center transition-colors">
+        <i class="fa-solid fa-xmark text-xs"></i>
+      </button>
+    </div>
+  </div>
+ 
+  <!-- ============ KPI CARDS ============ -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+ 
+    <div class="kpi-card panel rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-[12px] text-slate-500 font-medium">Total Références</p>
+          <p class="text-[26px] font-bold text-white mt-1.5 font-mono">1,240</p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-layer-group text-indigo-400"></i>
+        </div>
+      </div>
+      <p class="text-[12px] text-emerald-400 mt-3"><i class="fa-solid fa-arrow-trend-up mr-1"></i>+8.4% ce mois</p>
+    </div>
+ 
+    <div class="kpi-card panel rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-[12px] text-slate-500 font-medium">Composants en Stock</p>
+          <p class="text-[26px] font-bold text-white mt-1.5 font-mono">184,500 <span class="text-[13px] text-slate-500 font-normal">pcs</span></p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-microchip text-emerald-400"></i>
+        </div>
+      </div>
+      <p class="text-[12px] text-slate-500 mt-3">Taux de couverture : <span class="text-emerald-400 font-medium">94%</span></p>
+    </div>
+ 
+    <div class="kpi-card panel rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-[12px] text-slate-500 font-medium">Alertes Stock Critiques</p>
+          <p class="text-[26px] font-bold text-white mt-1.5 font-mono">3 <span class="text-[13px] text-slate-500 font-normal">refs</span></p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
+        </div>
+      </div>
+      <p class="text-[12px] text-rose-400 mt-3">Réapprovisionnement requis</p>
+    </div>
+ 
+    <div class="kpi-card panel rounded-xl p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-[12px] text-slate-500 font-medium">Taux de Traçabilité</p>
+          <p class="text-[26px] font-bold text-white mt-1.5 font-mono">99.8<span class="text-[15px]">%</span></p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+          <i class="fa-solid fa-chart-line text-blue-400"></i>
+        </div>
+      </div>
+      <p class="text-[12px] text-slate-500 mt-3">Conforme <span class="text-blue-400 font-medium">ISO 13485</span></p>
+    </div>
+  </div>
+ 
+  <!-- ============ CHARTS ============ -->
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+    <div class="panel rounded-xl p-5 xl:col-span-2">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-[14px] font-semibold text-white">Consommation des Composants CMS</h3>
+          <p class="text-[11.5px] text-slate-500 mt-0.5">7 derniers jours · par ligne de production</p>
+        </div>
+        <div class="flex items-center gap-3 text-[11px]">
+          <span class="flex items-center gap-1.5 text-slate-400"><span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>SMT 1 — Médical</span>
+          <span class="flex items-center gap-1.5 text-slate-400"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>SMT 2 — Industriel</span>
+        </div>
+      </div>
+      <div class="h-[280px]"><canvas id="lineChart"></canvas></div>
+    </div>
+ 
+    <div class="panel rounded-xl p-5">
+      <h3 class="text-[14px] font-semibold text-white">Distribution du Stock par Famille</h3>
+      <p class="text-[11.5px] text-slate-500 mt-0.5 mb-4">Répartition actuelle</p>
+      <div class="h-[200px] flex items-center justify-center"><canvas id="doughnutChart"></canvas></div>
+      <div class="mt-4 space-y-2">
+        <div class="flex items-center justify-between text-[12px]"><span class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-indigo-500"></span>Résistances</span><span class="font-mono text-slate-300">45%</span></div>
+        <div class="flex items-center justify-between text-[12px]"><span class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Condensateurs</span><span class="font-mono text-slate-300">25%</span></div>
+        <div class="flex items-center justify-between text-[12px]"><span class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Microcontrôleurs</span><span class="font-mono text-slate-300">15%</span></div>
+        <div class="flex items-center justify-between text-[12px]"><span class="flex items-center gap-2 text-slate-400"><span class="w-2 h-2 rounded-full bg-pink-500"></span>Semiconducteurs & Diodes</span><span class="font-mono text-slate-300">15%</span></div>
+      </div>
+    </div>
+  </div>
+ 
+  <!-- ============ INVENTORY TABLE ============ -->
+  <div class="panel rounded-xl overflow-hidden">
+    <div class="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800">
+      <div>
+        <h3 class="text-[14px] font-semibold text-white">Inventaire des Composants</h3>
+        <p class="text-[11.5px] text-slate-500 mt-0.5">Traçabilité complète par référence, famille et emplacement</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 text-xs"></i>
+          <input id="searchInput" type="text" placeholder="Rechercher par référence ou désignation…"
+            class="w-64 sm:w-80 bg-[#0b0f1a] border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-[12.5px] text-white placeholder:text-slate-600">
+        </div>
+        <button onclick="openModal()" class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[12.5px] font-semibold flex items-center gap-2 transition-colors whitespace-nowrap">
+          <i class="fa-solid fa-plus text-[11px]"></i>Entrée Composant
+        </button>
+      </div>
+    </div>
+ 
+    <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead>
+          <tr class="text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
+            <th class="px-5 py-3 font-medium">QR / Référence</th>
+            <th class="px-5 py-3 font-medium">Désignation Technique</th>
+            <th class="px-5 py-3 font-medium">Famille</th>
+            <th class="px-5 py-3 font-medium">Stock Actuel</th>
+            <th class="px-5 py-3 font-medium">Seuil Sécurité</th>
+            <th class="px-5 py-3 font-medium">Emplacement</th>
+            <th class="px-5 py-3 font-medium">Statut</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody" class="divide-y divide-slate-800/70 text-[13px]"></tbody>
+      </table>
+    </div>
+    <p id="noResults" class="hidden px-5 py-8 text-center text-[13px] text-slate-500">
+      <i class="fa-solid fa-box-open mr-2"></i>Aucun composant ne correspond à votre recherche.
+    </p>
+  </div>
+ 
+  <footer class="text-center text-[11px] text-slate-600 pt-2 pb-6">
+    Valtronic MES · SMT Stock & Traceability System — Usine Berrechid © 2026
+  </footer>
+</main>
+ 
+<!-- ============ MODAL ============ -->
+<div id="modal-backdrop" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+  <div class="modal-panel panel rounded-xl w-full max-w-md p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-[15px] font-semibold text-white"><i class="fa-solid fa-plus text-indigo-400 mr-2"></i>Nouvelle Entrée Composant</h3>
+      <button onclick="closeModal()" class="w-7 h-7 rounded-lg hover:bg-slate-800 flex items-center justify-center text-slate-500"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="addForm" class="space-y-4" onsubmit="return addComponent(event)">
+      <div>
+        <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Référence Composant</label>
+        <input required id="f-ref" type="text" placeholder="ex: RES-4K7-0603"
+          class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] font-mono text-white placeholder:text-slate-600">
+      </div>
+      <div>
+        <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Désignation</label>
+        <input required id="f-desc" type="text" placeholder="ex: Résistance CMS 4.7k Ohm 1%"
+          class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] text-white placeholder:text-slate-600">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Famille</label>
+          <select id="f-fam" class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] text-white">
+            <option>Résistances</option>
+            <option>Condensateurs</option>
+            <option>Circuits Intégrés</option>
+            <option>Semiconducteurs</option>
+            <option>Diodes</option>
+            <option>Capteur</option>
+            <option>Connecteurs</option>
+            <option>Quartz</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Quantité Initiale</label>
+          <input required id="f-qty" type="number" min="0" placeholder="0"
+            class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] font-mono text-white placeholder:text-slate-600">
+        </div>
+      </div>
+      <div>
+        <label class="text-[11.5px] font-medium text-slate-400 block mb-1.5">Emplacement (Rack)</label>
+        <input required id="f-loc" type="text" placeholder="ex: Rack A-15"
+          class="w-full bg-[#0b0f1a] border border-slate-800 rounded-lg px-3 py-2.5 text-[13px] font-mono text-white placeholder:text-slate-600">
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="button" onclick="closeModal()" class="flex-1 py-2.5 rounded-lg border border-slate-700 text-slate-300 text-[13px] font-medium hover:bg-slate-800/50 transition-colors">Annuler</button>
+        <button type="submit" class="flex-1 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-semibold transition-colors">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+ 
+<script>
+/* ============ DATA ============ */
+let inventory = [
+  { ref:"STM32F407VGT6", desc:"Microcontrôleur ARM Cortex-M4 32-Bit", fam:"Circuits Intégrés", stock:450, seuil:100, loc:"Rack A-12" },
+  { ref:"CAP-10UF-0805", desc:"Condensateur Céramique MLCC 10uF 50V", fam:"Condensateurs", stock:85, seuil:500, loc:"Rack B-04" },
+  { ref:"RES-10K-0603", desc:"Résistance CMS 10k Ohm 1% 1/10W", fam:"Résistances", stock:12500, seuil:2000, loc:"Rack A-02" },
+  { ref:"MOSFET-N-CH-60V", desc:"Transistor MOSFET N-Channel 60V 30A SO-8", fam:"Semiconducteurs", stock:1200, seuil:300, loc:"Rack C-09" },
+  { ref:"DIODE-1N4007-SMA", desc:"Diode de Redressement 1A 1000V CMS", fam:"Diodes", stock:180, seuil:250, loc:"Rack B-02", order:true },
+];
+ 
+function statusOf(item){
+  if(item.order) return { label:"En Commande", cls:"bg-amber-500/10 text-amber-400 border border-amber-800/40", dot:"bg-amber-400" };
+  if(item.stock < item.seuil) return { label:"Critique", cls:"bg-rose-500/10 text-rose-400 border border-rose-800/40", dot:"bg-rose-400 pulse" };
+  return { label:"Optimal", cls:"bg-emerald-500/10 text-emerald-400 border border-emerald-800/40", dot:"bg-emerald-400" };
+}
+ 
+function renderTable(filter=""){
+  const body = document.getElementById('tableBody');
+  const noResults = document.getElementById('noResults');
+  const q = filter.trim().toLowerCase();
+  const rows = inventory.filter(i => i.ref.toLowerCase().includes(q) || i.desc.toLowerCase().includes(q));
+ 
+  body.innerHTML = "";
+  noResults.classList.toggle('hidden', rows.length > 0);
+ 
+  rows.forEach(item => {
+    const s = statusOf(item);
+    const tr = document.createElement('tr');
+    if(item._new){ tr.classList.add('fade-row'); delete item._new; }
+    tr.innerHTML = `
+      <td class="px-5 py-3.5">
+        <div class="flex items-center gap-2.5">
+          <i class="fa-solid fa-qrcode text-slate-600 text-sm"></i>
+          <span class="font-mono text-[12.5px] text-indigo-300">${item.ref}</span>
+        </div>
+      </td>
+      <td class="px-5 py-3.5 text-slate-300">${item.desc}</td>
+      <td class="px-5 py-3.5"><span class="text-[12px] text-slate-400">${item.fam}</span></td>
+      <td class="px-5 py-3.5 font-mono text-slate-200"><span>${item.stock.toLocaleString('fr-FR')}</span> pcs <button onclick="decreaseStock('${item.ref}')" class="ml-2 px-2 py-0.5 bg-red-600/30 hover:bg-red-600 text-red-400 rounded text-xs border border-red-500/30">-1</button></td>
+      <td class="px-5 py-3.5 font-mono text-slate-500">${item.seuil.toLocaleString('fr-FR')} pcs</td>
+      <td class="px-5 py-3.5 text-slate-400">${item.loc}</td>
+      <td class="px-5 py-3.5">
+        <span class="badge ${s.cls}"><span class="status-dot ${s.dot}"></span>${s.label}</span>
+      </td>`;
+    body.appendChild(tr);
+  });
+}
+ 
+document.getElementById('searchInput').addEventListener('input', e => renderTable(e.target.value));
+ function decreaseStock(ref) {
+    // 1. كنقلبو على القطعة فـ المصفوفة inventory
+    const item = inventory.find(i => i.ref === ref);
+    
+    // 2. إلا لقيناها وكان المخزون كبر من 0، كنقصو 1
+    if (item && item.stock > 0) {
+        item.stock -= 1;
+        // 3. كنعاودو نعيطو للـ renderTable باش تحدّث الواجهة مباشرة
+        renderTable();
+    } else {
+        alert("المخزون سالا أو القطعة غير موجودة!");
+    }
+}
+/* ============ MODAL ============ */
+function openModal(){
+  document.getElementById('modal-backdrop').classList.remove('hidden');
+  document.getElementById('modal-backdrop').classList.add('flex');
+}
+function closeModal(){
+  document.getElementById('modal-backdrop').classList.add('hidden');
+  document.getElementById('modal-backdrop').classList.remove('flex');
+  document.getElementById('addForm').reset();
+}
+document.getElementById('modal-backdrop').addEventListener('click', e => { if(e.target.id === 'modal-backdrop') closeModal(); });
+ 
+function addComponent(e){
+  e.preventDefault();
+  const ref = document.getElementById('f-ref').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+  const fam = document.getElementById('f-fam').value;
+  const qty = parseInt(document.getElementById('f-qty').value, 10) || 0;
+  const loc = document.getElementById('f-loc').value.trim();
+ 
+  inventory.unshift({ ref, desc, fam, stock: qty, seuil: Math.round(qty * 0.2) || 50, loc, _new:true });
+  closeModal();
+  document.getElementById('searchInput').value = "";
+  renderTable();
+  return false;
+}
+ 
+function autoOrder(){
+  const item = inventory.find(i => i.ref === "CAP-10UF-0805");
+  if(item){ item.order = true; renderTable(document.getElementById('searchInput').value); }
+  const banner = document.getElementById('alert-banner');
+  if(banner){
+    banner.innerHTML = `<div class="flex items-center gap-3 py-1"><i class="fa-solid fa-circle-check text-emerald-400"></i><p class="text-[13px] text-emerald-300 font-medium">Commande automatique envoyée pour CAP-10UF-0805 — statut mis à jour vers "En Commande".</p></div>`;
+    banner.classList.remove('border-rose-800/50','from-rose-950/60','to-rose-900/20');
+    banner.classList.add('border-emerald-800/50','bg-emerald-950/30');
+    setTimeout(() => banner.remove(), 3500);
+  }
+}
+ 
+renderTable();
+ 
+/* ============ CHARTS ============ */
+Chart.defaults.color = '#5b6579';
+Chart.defaults.font.family = "'Inter', sans-serif";
+ 
+new Chart(document.getElementById('lineChart'), {
+  type: 'line',
+  data: {
+    labels: ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'],
+    datasets: [
+      {
+        label: 'Ligne SMT 1 — Médical',
+        data: [12000,19000,15000,22000,18000,24000,21000],
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.12)',
+        pointBackgroundColor: '#6366f1',
+        pointBorderColor: '#0e1420',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        tension: 0.35,
+        fill: true,
+      },
+      {
+        label: 'Ligne SMT 2 — Industriel',
+        data: [8000,11000,9500,14000,12000,16000,13000],
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16,185,129,0.10)',
+        pointBackgroundColor: '#10b981',
+        pointBorderColor: '#0e1420',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        tension: 0.35,
+        fill: true,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display:false } },
+    scales: {
+      x: { grid: { color: '#1e2636', drawTicks:false }, ticks: { font:{size:11} } },
+      y: { grid: { color: '#1e2636', drawTicks:false }, ticks: { font:{size:11}, callback: v => (v/1000)+'k' } }
+    }
+  }
+});
+ 
+new Chart(document.getElementById('doughnutChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Résistances','Condensateurs','Microcontrôleurs','Semiconducteurs & Diodes'],
+    datasets: [{
+      data: [45,25,15,15],
+      backgroundColor: ['#6366f1','#10b981','#f59e0b','#ec4899'],
+      borderColor: '#0e1420',
+      borderWidth: 3,
+      hoverOffset: 6,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '72%',
+    plugins: { legend: { display:false } }
+  }
+});
+</script>
+</body>
+</html>
